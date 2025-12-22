@@ -26,6 +26,16 @@ public class FontConfig {
     @Config.RangeFloat(min = 0F, max = 2F)
     public static float fontShadowOffset;
 
+    @Config.Comment("The number of shadows to be drawn behind text at various offsets.")
+    @Config.DefaultInt(1)
+    @Config.RangeInt(min = 1, max = 8)
+    public static int shadowCopies;
+
+    @Config.Comment("The number of bold copies to be drawn behind text at various offsets.")
+    @Config.DefaultInt(2)
+    @Config.RangeInt(min = 1, max = 8)
+    public static int boldCopies;
+
     @Config.Comment("Influences the aspect ratio of each glyph.")
     @Config.DefaultFloat(0F)
     @Config.RangeFloat(min = -1F, max = 1F)
@@ -55,4 +65,9 @@ public class FontConfig {
     @Config.DefaultInt(7)
     @Config.RangeInt(min = 1, max = 24)
     public static int fontAAStrength;
+
+    @Config.Comment("Custom font scale multiplier, for bugfixes.")
+    @Config.DefaultFloat(1.5F)
+    @Config.RangeFloat(min = 0.1F, max = 3F)
+    public static float customFontScale;
 }

@@ -1,22 +1,20 @@
 package jss.notfine.render;
 
 
-import com.gtnewhorizon.gtnhlib.client.renderer.TessellatorManager;
-import com.gtnewhorizon.gtnhlib.client.renderer.vbo.VBOManager;
-import com.gtnewhorizon.gtnhlib.client.renderer.vertex.DefaultVertexFormat;
 import jss.notfine.core.Settings;
 import jss.util.RandomXoshiro256StarStar;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.Tessellator;
+import org.lwjgl.opengl.GL11;
 
 public class RenderStars {
 
     //private static final ResourceLocation locationStarsPng = new ResourceLocation("textures/colormap/stars.png");
 
     public static void reloadStarRenderList(RenderGlobal render) {
-        TessellatorManager.startCapturing();
+        GL11.glNewList(render.starGLCallList, GL11.GL_COMPILE);
         renderStars();
-        VBOManager.registerVBO(render.starGLCallList, TessellatorManager.stopCapturingToVBO(DefaultVertexFormat.POSITION));
+        GL11.glEndList();
     }
 
     public static void renderStars() {

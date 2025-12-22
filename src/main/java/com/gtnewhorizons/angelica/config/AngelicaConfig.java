@@ -17,7 +17,7 @@ public class AngelicaConfig {
     @Config.DefaultBoolean(true)
     public static boolean enableReesesSodiumOptions;
 
-    @Config.Comment("Enable Sodium fluid rendering")
+    @Config.Comment("Enable Sodium fluid rendering [Experimental]")
     @Config.DefaultBoolean(false)
     @Config.RequiresMcRestart
     public static boolean enableSodiumFluidRendering;
@@ -42,10 +42,15 @@ public class AngelicaConfig {
     @Config.RequiresMcRestart
     public static boolean enableMCPatcherForgeFeatures;
 
-    @Config.Comment("Replace some vanilla render paths with more optimized versions. Disable if you encounter mixin conflicts.")
+    @Config.Comment("Replace cloud renderer with a VBO version.")
     @Config.DefaultBoolean(true)
     @Config.RequiresMcRestart
-    public static boolean enableVBO;
+    public static boolean enableVBOClouds;
+
+    @Config.Comment("Uses cached attributes for VBO rendering, resulting in less CPU overhead. Disable if you notice any graphical issues.")
+    @Config.DefaultBoolean(true)
+    @Config.RequiresMcRestart
+    public static boolean enableVAO;
 
     @Config.Comment("Enable NotFine features")
     @Config.DefaultBoolean(true)
@@ -189,17 +194,18 @@ public class AngelicaConfig {
             "net.minecraft.block.BlockStairs"
     })
     public static String[] blockCrackFixBlacklist;
-
+    
     @Config.Comment({"Block classes that have render pass other than 0 but still need to be manipulated.",
                      "Add a block class here if you see flickering (z-fighting) with fixBlockCrack enabled"
     })
     @Config.DefaultStringList({
             "gregtech.common.blocks.BlockOres",
+            "gregtech.common.blocks.GTBlockOre",
             "shukaro.artifice.block.world.BlockOre",
             "bartworks.system.material.BWMetaGeneratedOres",
             "gtPlusPlus.core.block.base.BlockBaseOre",
     })
-    public static String[] blockCrackFixRenderPassWhitelist;
+    public static String[] blockCrackFixRenderPassWhitelist__;
 
     @Config.Comment("Register HardcodedCustomUniforms in Iris Shaders. May help with compatibility in certain shader packs")
     @Config.DefaultBoolean(false)

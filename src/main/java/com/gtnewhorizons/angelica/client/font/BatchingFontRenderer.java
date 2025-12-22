@@ -1,6 +1,7 @@
 package com.gtnewhorizons.angelica.client.font;
 
 import com.google.common.collect.ImmutableSet;
+import com.gtnewhorizon.gtnhlib.util.font.GlyphReplacements;
 import com.gtnewhorizons.angelica.config.FontConfig;
 import com.gtnewhorizons.angelica.glsm.GLStateManager;
 import com.gtnewhorizons.angelica.mixins.interfaces.FontRendererAccessor;
@@ -13,6 +14,7 @@ import net.minecraft.util.MathHelper;
 import net.minecraft.util.ResourceLocation;
 import org.apache.commons.io.IOUtils;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
 
 import java.io.IOException;
@@ -161,6 +163,15 @@ public class BatchingFontRenderer {
         pushQuadIdx(vtxId);
     }
 
+    private void pushTexRect(float x, float y, float w, float h, float itOff, int rgba, float uStart, float vStart, float uSz, float vSz) {
+        final int vtxId = vtxWriterIndex;
+        pushVtx(x + itOff, y, rgba, uStart, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
+        pushVtx(x - itOff, y + h, rgba, uStart, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
+        pushVtx(x + itOff + w, y, rgba, uStart + uSz, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
+        pushVtx(x - itOff + w, y + h, rgba, uStart + uSz, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
+        pushQuadIdx(vtxId);
+    }
+
     private int pushQuadIdx(int startV) {
         final int idx = idxWriterIndex;
         batchIndices.put(idx, startV);
@@ -268,6 +279,8 @@ public class BatchingFontRenderer {
     int fontAAModeLast = -1;
     int fontAAStrengthLast = -1;
     private void flushBatch() {
+        final int prevProgram = GLStateManager.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+
         // Sort&Draw
         batchCommands.sort(FontDrawCmd.DRAW_ORDER_COMPARATOR);
 
@@ -282,10 +295,11 @@ public class BatchingFontRenderer {
         GLStateManager.tryBlendFuncSeparate(blendSrcRGB, blendDstRGB, GL11.GL_ONE, GL11.GL_ZERO);
         GLStateManager.glShadeModel(GL11.GL_FLAT);
 
-        if (FontConfig.fontAAMode != 0) {
+        final boolean canUseAA = FontConfig.fontAAMode != 0 && prevProgram == 0;
+        if (canUseAA) {
             GL20.glVertexAttribPointer(texBoundAttrLocation, 4, false, 0, batchVtxTexBounds);
             GL20.glEnableVertexAttribArray(texBoundAttrLocation);
-            lastActiveProgram = GLStateManager.getActiveProgram();
+            lastActiveProgram = prevProgram;
             GLStateManager.glUseProgram(fontShaderId);
             if (FontConfig.fontAAMode != fontAAModeLast) {
                 fontAAModeLast = FontConfig.fontAAMode;
@@ -296,6 +310,8 @@ public class BatchingFontRenderer {
                 GL20.glUniform1f(AAStrength, FontConfig.fontAAStrength / 120.f);
             }
         }
+
+        GL13.glClientActiveTexture(GL13.GL_TEXTURE0);
         GL11.glTexCoordPointer(2, 0, batchVtxTexCoords);
         GL11.glEnableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
         GL11.glColorPointer(4, GL11.GL_UNSIGNED_BYTE, 0, batchVtxColors);
@@ -303,6 +319,9 @@ public class BatchingFontRenderer {
         GL11.glVertexPointer(2, 0, batchVtxPositions);
         GL11.glEnableClientState(GL11.GL_VERTEX_ARRAY);
         GLStateManager.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+        GL11.glDisableClientState(GL11.GL_NORMAL_ARRAY);
+        GL11.glNormal3f(0.0f, 0.0f, 1.0f);
 
         // Use plain for loop to avoid allocations
         final FontDrawCmd[] cmdsData = batchCommands.elements();
@@ -326,7 +345,7 @@ public class BatchingFontRenderer {
 
             GL11.glDrawElements(GL11.GL_TRIANGLES, batchIndices);
         }
-        if (FontConfig.fontAAMode != 0) {
+        if (canUseAA) {
             GLStateManager.glUseProgram(lastActiveProgram);
             GL20.glDisableVertexAttribArray(texBoundAttrLocation);
         }
@@ -362,11 +381,11 @@ public class BatchingFontRenderer {
     }
 
     public float getGlyphScaleX() {
-        return forceDefaults() ? 1 : (float) (FontConfig.glyphScale * Math.pow(2, FontConfig.glyphAspect)) * (FontStrategist.customFontInUse ? 1.5f : 1);
+        return forceDefaults() ? 1 : (float) (FontConfig.glyphScale * Math.pow(2, FontConfig.glyphAspect));
     }
 
     public float getGlyphScaleY() {
-        return forceDefaults() ? 1 : (float) (FontConfig.glyphScale / Math.pow(2, FontConfig.glyphAspect)) * (FontStrategist.customFontInUse ? 1.5f : 1);
+        return forceDefaults() ? 1 : (float) (FontConfig.glyphScale / Math.pow(2, FontConfig.glyphAspect));
     }
 
     public float getGlyphSpacing() {
@@ -413,13 +432,13 @@ public class BatchingFontRenderer {
             boolean curStrikethrough = false;
             boolean curUnderline = false;
 
-            final float glyphScaleY = getGlyphScaleY();
-            final float heightNorth = anchorY + (underlying.FONT_HEIGHT - 1.0f) * (0.5f - glyphScaleY / 2);
-            final float heightSouth = (underlying.FONT_HEIGHT - 1.0f) * glyphScaleY;
+            float glyphScaleY = getGlyphScaleY();
+            float heightNorth = anchorY + (underlying.FONT_HEIGHT - 1.0f) * (0.5f - glyphScaleY / 2);
 
             final float underlineY = heightNorth + (underlying.FONT_HEIGHT - 1.0f) * glyphScaleY;
             float underlineStartX = 0.0f;
             float underlineEndX = 0.0f;
+
             final float strikethroughY = heightNorth + ((float) (underlying.FONT_HEIGHT / 2) - 1.0f) * glyphScaleY;
             float strikethroughStartX = 0.0f;
             float strikethroughEndX = 0.0f;
@@ -489,11 +508,21 @@ public class BatchingFontRenderer {
                     continue;
                 }
 
+                if (FontConfig.enableCustomFont) {
+                    String chrReplacement = GlyphReplacements.customGlyphs.get(String.valueOf(chr));
+                    if (chrReplacement != null) {
+                        chr = chrReplacement.charAt(0);
+                    }
+                }
+
                 if (curRandom) {
                     chr = FontProviderMC.get(this.isSGA).getRandomReplacement(chr);
                 }
 
                 FontProvider fontProvider = FontStrategist.getFontProvider(this, chr, FontConfig.enableCustomFont, unicodeFlag);
+
+                heightNorth = anchorY + (underlying.FONT_HEIGHT - 1.0f) * (0.5f - glyphScaleY * fontProvider.getYScaleMultiplier() / 2);
+                float heightSouth = (underlying.FONT_HEIGHT - 1.0f) * glyphScaleY * fontProvider.getYScaleMultiplier();
 
                 // Check ASCII space, NBSP, NNBSP
                 if (chr == ' ' || chr == '\u00A0' || chr == '\u202F') {
@@ -509,49 +538,45 @@ public class BatchingFontRenderer {
                 final float vSz = fontProvider.getVSize(chr);
                 final float itOff = curItalic ? 1.0F : 0.0F; // italic offset
                 final float shadowOffset = fontProvider.getShadowOffset();
+                final float xShift = (fontProvider instanceof FontProviderCustom ? getGlyphScaleX() * FontConfig.customFontScale : 0.0f); // corrective factor to improve text alignment
+                final int shadowCopies = FontConfig.shadowCopies;
+                final int boldCopies = FontConfig.boldCopies;
                 final ResourceLocation texture = fontProvider.getTexture(chr);
-
-                final int vtxId = vtxWriterIndex;
                 final int idxId = idxWriterIndex;
 
-                int vtxCount = 0;
-
                 if (enableShadow) {
-                    pushVtx(curX + itOff + shadowOffset, heightNorth + shadowOffset, curShadowColor, uStart, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushVtx(curX - itOff + shadowOffset, heightNorth + heightSouth + shadowOffset, curShadowColor, uStart, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushVtx(curX + glyphW - 1.0F + itOff + shadowOffset, heightNorth + shadowOffset, curShadowColor, uStart + uSz, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushVtx(curX + glyphW - 1.0F - itOff + shadowOffset, heightNorth + heightSouth + shadowOffset, curShadowColor, uStart + uSz, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushQuadIdx(vtxId + vtxCount);
-                    vtxCount += 4;
+                    for (int n = 1; n <= shadowCopies; n++) {
+                        final float shadowOffsetPart = shadowOffset * ((float) n / shadowCopies);
+                        pushTexRect(curX + shadowOffsetPart - xShift, heightNorth + shadowOffsetPart, glyphW - 1.0f, heightSouth, itOff, curShadowColor, uStart, vStart, uSz, vSz);
 
-                    if (curBold) {
-                        final float shadowOffset2 = 2.0f * shadowOffset;
-                        pushVtx(curX + itOff + shadowOffset2, heightNorth + shadowOffset, curShadowColor, uStart, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                        pushVtx(curX - itOff + shadowOffset2, heightNorth + heightSouth + shadowOffset, curShadowColor, uStart, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                        pushVtx(curX + glyphW - 1.0F + itOff + shadowOffset2, heightNorth + shadowOffset, curShadowColor, uStart + uSz, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                        pushVtx(curX + glyphW - 1.0F - itOff + shadowOffset2, heightNorth + heightSouth + shadowOffset, curShadowColor, uStart + uSz, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                        pushQuadIdx(vtxId + vtxCount);
-                        vtxCount += 4;
+                        if (curBold) {
+                            pushTexRect(curX + 2.0f * shadowOffsetPart - xShift, heightNorth + shadowOffsetPart, glyphW - 1.0f, heightSouth, itOff, curShadowColor, uStart, vStart, uSz, vSz);
+                        }
                     }
                 }
 
-                pushVtx(curX + itOff, heightNorth, curColor, uStart, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                pushVtx(curX - itOff, heightNorth + heightSouth, curColor, uStart, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                pushVtx(curX + glyphW - 1.0F + itOff, heightNorth, curColor, uStart + uSz, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                pushVtx(curX + glyphW - 1.0F - itOff, heightNorth + heightSouth, curColor, uStart + uSz, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                pushQuadIdx(vtxId + vtxCount);
-                vtxCount += 4;
+                pushTexRect(curX - xShift, heightNorth, glyphW - 1.0f, heightSouth, itOff, curColor, uStart, vStart, uSz, vSz);
 
                 if (curBold) {
-                    pushVtx(shadowOffset + curX + itOff, heightNorth, curColor, uStart, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushVtx(shadowOffset + curX - itOff, heightNorth + heightSouth, curColor, uStart, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushVtx(shadowOffset + curX + glyphW - 1.0F + itOff, heightNorth, curColor, uStart + uSz, vStart, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushVtx(shadowOffset + curX + glyphW - 1.0F - itOff, heightNorth + heightSouth, curColor, uStart + uSz, vStart + vSz, uStart, uStart + uSz, vStart, vStart + vSz);
-                    pushQuadIdx(vtxId + vtxCount);
-                    vtxCount += 4;
+                    for (int n = 1; n <= boldCopies; n++) {
+                        final float shadowOffsetPart = shadowOffset * ((float) n / boldCopies);
+                        pushTexRect(curX + shadowOffsetPart - xShift, heightNorth, glyphW - 1.0f, heightSouth, itOff, curColor, uStart, vStart, uSz, vSz);
+                    }
                 }
 
+                /*
+                Vertex-per-char counts for different configurations
+                    default:        4
+                    shadow only:    4(1 + shadowCopies)
+                    bold only:      4(1 + boldCopies)
+                    both:           4(1 + 2 * shadowCopies + boldCopies)
+                 */
+                int charCount = 1;
+                if (enableShadow) { charCount += shadowCopies * (curBold ? 2 : 1); }
+                if (curBold) { charCount += boldCopies; }
+                final int vtxCount = 4 * charCount;
                 pushDrawCmd(idxId, vtxCount / 2 * 3, texture, chr > 255);
+
                 curX += (xAdvance + (curBold ? shadowOffset : 0.0f)) + getGlyphSpacing();
                 underlineEndX = curX;
                 strikethroughEndX = curX;
